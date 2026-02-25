@@ -2,6 +2,7 @@
 
 use std::{
     fs::{self, File, OpenOptions},
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -134,21 +135,32 @@ impl<'f> JailerOption<'f> {
         // spawn instance with jailer
         let mut command = self.build_cmd()?;
 
-        // Redirect stdin, stdout and stderr
+        // Place the child process in its own process group so that terminal
+        // signals (e.g. Ctrl+C / SIGINT) are not forwarded to it.
+        command.process_group(0);
+
+        // Redirect stdin, stdout and stderr. Default to Stdio::null() when no
+        // explicit path is provided.
         if let Some(ref stdin) = self.stdin {
             command.stdin(Stdio::from(File::open(stdin)?));
+        } else {
+            command.stdin(Stdio::null());
         }
 
         if let Some(ref stdout) = self.stdout {
             command.stdout(Stdio::from(
                 OpenOptions::new().create(true).write(true).open(stdout)?,
             ));
+        } else {
+            command.stdout(Stdio::null());
         }
 
         if let Some(ref stderr) = self.stderr {
             command.stderr(Stdio::from(
                 OpenOptions::new().create(true).write(true).open(stderr)?,
             ));
+        } else {
+            command.stderr(Stdio::null());
         }
 
         let jailer_workspace_dir = self.jailer_workspace_dir()?;

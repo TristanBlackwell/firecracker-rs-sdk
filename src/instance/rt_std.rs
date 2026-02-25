@@ -30,7 +30,7 @@ impl Instance {
         }
 
         // connect socket
-        println!("start_vmm connecting to {}", self.socket_on_host.display());
+        log::debug!("start_vmm connecting to {}", self.socket_on_host.display());
         let socket_agent = SocketAgent::new(&self.socket_on_host, Duration::from_secs(3))?;
         self.agent = Some(socket_agent);
         self.fstack
