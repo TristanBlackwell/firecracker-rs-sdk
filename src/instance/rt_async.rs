@@ -23,9 +23,13 @@ impl Instance {
         // if we should remove jailer workspace directory after using / error
         // and there is a jailer workspace directory configuration (spawn by jailer)
         match (self.remove_jailer_workspace_dir, &self.jailer_workspace_dir) {
-            (Some(true), Some(path)) => self
-                .fstack
-                .push_action(FStackAction::RemoveDirectory(path.clone())),
+            (Some(true), Some(path)) => {
+                // Remove the entire jail directory ({chroot_base}/{exec_file}/{id}/),
+                // not just the root/ subdirectory, so no empty parent dirs are left.
+                let cleanup_dir = path.parent().unwrap_or(path).to_path_buf();
+                self.fstack
+                    .push_action(FStackAction::RemoveDirectory(cleanup_dir));
+            }
             _ => (),
         }
 
