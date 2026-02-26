@@ -42,7 +42,7 @@ impl SocketAgent {
             match self.stream.try_read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    vec.extend_from_slice(&mut buf);
+                    vec.extend_from_slice(&buf[..n]);
                     if n < MAX_BUFFER_SIZE {
                         // No need for checking again
                         break;

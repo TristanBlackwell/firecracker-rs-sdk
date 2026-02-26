@@ -75,6 +75,10 @@ pub trait ResponseTrait {
         }
         let body_start = body_start.unwrap(); // unwrap safe
 
+        let status_code = res
+            .code
+            .ok_or_else(|| Error::Event("Missing HTTP status code".into()))?;
+
         let content_length = res
             .headers
             .iter()
@@ -88,16 +92,51 @@ pub trait ResponseTrait {
                 )
             });
 
+        // Handle error responses (non-2xx) before attempting payload
+        // deserialization. Firecracker returns errors as
+        // {"fault_message": "..."}.
+        if status_code >= 300 {
+            if let Some(content_length) = content_length {
+                if content_length > 0 {
+                    let body = &response[body_start..(body_start + content_length)];
+                    if let Ok(error_body) = serde_json::from_slice::<serde_json::Value>(body) {
+                        if let Some(msg) = error_body.get("fault_message").and_then(|v| v.as_str())
+                        {
+                            return Err(Error::Event(format!("HTTP {}: {}", status_code, msg)));
+                        }
+                        return Err(Error::Event(format!(
+                            "HTTP {}: {}",
+                            status_code, error_body
+                        )));
+                    }
+                    let body_str = String::from_utf8_lossy(body);
+                    return Err(Error::Event(format!("HTTP {}: {}", status_code, body_str)));
+                }
+            }
+            return Err(Error::Event(format!(
+                "HTTP {} (no response body)",
+                status_code
+            )));
+        }
+
+        // Success path (2xx)
         match content_length {
-            Some(content_length) => {
+            Some(content_length) if content_length > 0 => {
                 let body = &response[body_start..(body_start + content_length)];
+
+                // If the expected payload is Empty, ignore the body on success
+                if TypeId::of::<Self::Payload>() == TypeId::of::<Empty>() {
+                    let payload: Self::Payload = serde_json::from_str("null")
+                        .map_err(|e| Error::Event(format!("serde_json decode: {e}")))?;
+                    return Ok(payload);
+                }
+
                 let payload: Self::Payload = serde_json::from_slice(body)
                     .map_err(|e| Error::Event(format!("serde_json decode: {e}")))?;
                 Ok(payload)
             }
-            None if TypeId::of::<Self::Payload>() == TypeId::of::<Empty>() => {
-                // just no payload, fine
-                // FIXME: ugly to use "null", could there be prettier solution?
+            _ if TypeId::of::<Self::Payload>() == TypeId::of::<Empty>() => {
+                // No body or Content-Length: 0, and we expect Empty — fine
                 let payload: Self::Payload = serde_json::from_str("null")
                     .map_err(|e| Error::Event(format!("serde_json decode: {e}")))?;
                 Ok(payload)
