@@ -492,13 +492,17 @@ impl Instance {
 
         match (&self.chroot_strategy, &self.jailer_workspace_dir) {
             (Some(chroot_strategy), Some(jailer_workspace_dir)) => {
+                // Unlike kernel/rootfs/drives, the vsock UDS path is *created* by
+                // Firecracker at runtime (bind() call), not an existing file to link.
+                // We compute the relative path the same way link_file would, but skip
+                // the actual hard_link() call so Firecracker can bind() a fresh socket.
                 let chroot_uds_path = chroot_strategy
-                .link_file(jailer_workspace_dir, &vsock.uds_path)?
-                .strip_prefix(jailer_workspace_dir)
-                .and_then(|x| Ok(x.to_path_buf()))
-                .map_err(|_| {
-                    Error::Instance("Fail to strip prefix `jailer_workspace_dir`, the chroot strategy should always link the file under `jailer_workspace_dir`!".into())
-                })?;
+                    .chroot_path(jailer_workspace_dir, &vsock.uds_path)?
+                    .strip_prefix(jailer_workspace_dir)
+                    .and_then(|x| Ok(x.to_path_buf()))
+                    .map_err(|_| {
+                        Error::Instance("Fail to strip prefix `jailer_workspace_dir`, the chroot strategy should always link the file under `jailer_workspace_dir`!".into())
+                    })?;
 
                 let vsock = Vsock {
                     uds_path: chroot_uds_path,
